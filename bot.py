@@ -19,6 +19,7 @@ from telegram import (
     LinkPreviewOptions,
     Update,
 )
+from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.ext import (
     Application,
@@ -62,10 +63,10 @@ GREETING_TEXT = (
 BROKER_LIST_TEXT = "Pick your broker 👇"
 
 BROKER_DETAIL = (
-    "To open an account on {broker} using our referral, click on the link:\n"
-    "{url}\n\n"
-    "Once done, fill out the 5x community form to get added in the channel:\n"
-    "{form_url}"
+    "To open an account on <b>{broker}</b> using our referral, click on the "
+    "button.\n\n"
+    "Once done, fill out the <b>5x community</b> form to get added in the "
+    "channel.\n"
 )
 
 # callback data -> (display name, referral url)
@@ -129,6 +130,18 @@ async def _safe_edit(
             raise
 
 
+async def _ack(query, text: str | None = None, show_alert: bool = False) -> None:
+    """Answer a callback query, ignoring it when Telegram considers it stale.
+
+    Happens when a user taps a button on a message from before the last
+    restart: the query id has expired by the time we process it.
+    """
+    try:
+        await query.answer(text=text, show_alert=show_alert)
+    except BadRequest as exc:
+        logger.debug("Ignoring stale callback answer: %s", exc)
+
+
 async def show_welcome(query) -> None:
     text = GREETING_TEXT.format(name=_display_name(query.from_user))
     await _safe_edit(query, text, choice_keyboard())
@@ -141,14 +154,15 @@ async def show_broker_list(query) -> None:
 async def show_broker_detail(query, cb: str) -> None:
     broker_name, url = BROKERS[cb]
     if not url:
-        await query.answer("That link isn't available right now.", show_alert=True)
+        await _ack(query, "That link isn't available right now.", show_alert=True)
         return
-    text = BROKER_DETAIL.format(
-        broker=broker_name,
-        url=url,
-        form_url=settings.form_url or "(link coming soon)",
+    text = BROKER_DETAIL.format(broker=broker_name)
+    await _safe_edit(
+        query,
+        text,
+        broker_detail_keyboard(broker_name, url),
+        parse_mode=ParseMode.HTML,
     )
-    await _safe_edit(query, text, broker_detail_keyboard(broker_name, url))
 
 
 # --- Handlers ------------------------------------------------------------
@@ -166,7 +180,7 @@ async def on_path(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None:
         return
-    await query.answer()
+    await _ack(query)
     logger.info(
         "User %s (%s) chose %s",
         query.from_user.id,
@@ -180,7 +194,7 @@ async def on_broker(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None:
         return
-    await query.answer()
+    await _ack(query)
     await show_broker_detail(query, query.data)
 
 
@@ -188,7 +202,7 @@ async def on_nav(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if query is None:
         return
-    await query.answer()
+    await _ack(query)
     if query.data == NAV_START:
         await show_welcome(query)
     else:
@@ -199,6 +213,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if update.message is None:
         return
     await update.message.reply_text("Send /start to see the welcome menu again.")
+
+
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    err = context.error
+    if isinstance(err, BadRequest) and "query is too old" in str(err).lower():
+        return  # stale button tap from before a restart; nothing to do
+    logger.error("Error while handling an update: %s", err, exc_info=err)
 
 
 # --- Entry point --------------------------------------------------------
@@ -215,9 +236,13 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(on_path, pattern=r"^path:"))
     app.add_handler(CallbackQueryHandler(on_broker, pattern=r"^broker:"))
     app.add_handler(CallbackQueryHandler(on_nav, pattern=r"^nav:"))
+    app.add_error_handler(on_error)
 
     logger.info("Bot starting (polling)…")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+    )
 
 
 if __name__ == "__main__":
