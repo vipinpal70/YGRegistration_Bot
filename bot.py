@@ -3,8 +3,8 @@
 Flow:
     /start
         -> greeting: the "Hi <name> ..." offer message
-           + buttons [1. Already under Us] [2. New Joinee]
-        -> "Pick your broker" + buttons [Elefin] [XM]
+           + button [New Joinee]  -> "Pick your broker" [Elefin] [XM]
+           + button [Verify, if under us!]  -> opens the verification bot
         -> tapping a broker shows ITS referral link + the 5x community form,
            with an "Open link" button and a Back button.
 """
@@ -40,8 +40,8 @@ logger = logging.getLogger("welcome-bot")
 NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 
 # --- Callback data -----------------------------------------------------------
-PATH_ALREADY = "path:already"
 PATH_NEW = "path:new"
+VERIFY_MISSING = "verify:missing"   # fallback when VERIFICATION_BOT is unset
 BROKER_ELEFIN = "broker:elefin"
 BROKER_XM = "broker:xm"
 NAV_START = "nav:start"       # back to the welcome screen
@@ -78,10 +78,18 @@ BROKERS: dict[str, tuple[str, str | None]] = {
 
 # --- Keyboards -------------------------------------------------------------
 def choice_keyboard() -> InlineKeyboardMarkup:
+    if settings.verification_url:
+        verify_btn = InlineKeyboardButton(
+            "Verify, if under us!", url=settings.verification_url
+        )
+    else:
+        verify_btn = InlineKeyboardButton(
+            "Verify, if under us!", callback_data=VERIFY_MISSING
+        )
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("1. Already under Us", callback_data=PATH_ALREADY)],
-            [InlineKeyboardButton("2. New Joinee", callback_data=PATH_NEW)],
+            [InlineKeyboardButton("New Joinee", callback_data=PATH_NEW)],
+            [verify_btn],
         ]
     )
 
@@ -209,6 +217,17 @@ async def on_nav(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await show_broker_list(query)
 
 
+async def on_verify_missing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await _ack(
+        query,
+        "Verification isn't set up yet — please contact an admin.",
+        show_alert=True,
+    )
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message is None:
         return
@@ -226,7 +245,7 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 def main() -> None:
     if settings.missing_links:
         logger.warning(
-            "These links are not set in .env, related buttons are hidden: %s",
+            "Not set in .env (related buttons hidden or disabled): %s",
             ", ".join(settings.missing_links),
         )
 
@@ -234,6 +253,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CallbackQueryHandler(on_path, pattern=r"^path:"))
+    app.add_handler(CallbackQueryHandler(on_verify_missing, pattern=rf"^{VERIFY_MISSING}$"))
     app.add_handler(CallbackQueryHandler(on_broker, pattern=r"^broker:"))
     app.add_handler(CallbackQueryHandler(on_nav, pattern=r"^nav:"))
     app.add_error_handler(on_error)

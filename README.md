@@ -7,25 +7,26 @@ Telegram onboarding bot for the community.
 ```
 /start  →  greeting: "Hi <name>, Curious to join my 5x community ..."
            (steps 1–3 + limited-time note)
-        →  [1. Already under Us]  [2. New Joinee]
+        →  [New Joinee]              → "Pick your broker 👇"
+        →  [Verify, if under us!]    → opens the verification bot (VERIFICATION_BOT)
 
-     after either choice:  "Pick your broker 👇"
+     "Pick your broker 👇"
              • Elefin  → its detail screen
              • XM      → its detail screen
              • ‹ Back  → greeting
 
      broker detail screen:
-        "To open an account on <broker> using our referral, click the link: <url>
-         Once done, fill out the 5x community form ...: <form url>"
+        "To open an account on <broker> using our referral, click on the button.
+         Once done, fill out the 5x community form ..."
              • 🔗 Open <broker> link   (referral URL)
              • 📝 5x community form     (Google Form URL)
              • ‹ Back                  → broker list
 ```
 
-Both `/start` choices lead to the same broker list. To make them diverge,
-branch in `on_path` in `bot.py`. Texts (`GREETING_TEXT`, `BROKER_DETAIL`) are
-plain text — URLs auto-link — and the greeting is personalised with the
-user's first name.
+`GREETING_TEXT` / `BROKER_LIST_TEXT` are plain text (URLs auto-link); the
+greeting is personalised with the user's first name. `BROKER_DETAIL` uses
+HTML for the bold broker name and "5x community". If `VERIFICATION_BOT` is
+unset, the Verify button shows a "not set up yet" alert instead of a link.
 
 ## Setup
 
@@ -37,12 +38,13 @@ cp .env.example .env      # then edit .env
 
 Fill in `.env`:
 
-| Variable     | Meaning                                                    |
-|--------------|-----------------------------------------------------------|
-| `BOT_TOKEN`  | Token from [@BotFather](https://t.me/BotFather)          |
-| `XM_URL`     | XM referral URL (blank = section + button hidden)        |
-| `ELEFIN_URL` | Elefin referral URL (blank = section + button hidden)    |
-| `FORM_URL`   | 5x community Google Form — how users get added to the channel |
+| Variable           | Meaning                                                  |
+|--------------------|---------------------------------------------------------|
+| `BOT_TOKEN`        | Token from [@BotFather](https://t.me/BotFather)        |
+| `XM_URL`           | XM referral URL (blank = section + button hidden)      |
+| `ELEFIN_URL`       | Elefin referral URL (blank = section + button hidden)  |
+| `FORM_URL`         | 5x community Google Form — how users get added         |
+| `VERIFICATION_BOT` | Verification bot: `https://t.me/...` URL or `@username` |
 
 ## Run
 

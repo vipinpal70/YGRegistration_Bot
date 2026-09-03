@@ -16,12 +16,23 @@ def _clean(value: str | None) -> str | None:
     return value or None
 
 
+def _resolve_bot_link(value: str | None) -> str | None:
+    """Accept a full URL or a bare @username and return a usable https link."""
+    value = _clean(value)
+    if not value:
+        return None
+    if value.startswith(("http://", "https://", "tg://")):
+        return value
+    return f"https://t.me/{value.lstrip('@')}"
+
+
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
     xm_url: str | None
     elefin_url: str | None
     form_url: str | None
+    verification_url: str | None
 
     @property
     def missing_links(self) -> list[str]:
@@ -29,6 +40,7 @@ class Settings:
             "XM_URL": self.xm_url,
             "ELEFIN_URL": self.elefin_url,
             "FORM_URL": self.form_url,
+            "VERIFICATION_BOT": self.verification_url,
         }
         return [name for name, url in pairs.items() if not url]
 
@@ -44,6 +56,7 @@ def load_settings() -> Settings:
         xm_url=_clean(os.getenv("XM_URL")),
         elefin_url=_clean(os.getenv("ELEFIN_URL")),
         form_url=_clean(os.getenv("FORM_URL")),
+        verification_url=_resolve_bot_link(os.getenv("VERIFICATION_BOT")),
     )
 
 
