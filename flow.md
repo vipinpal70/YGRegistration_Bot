@@ -150,6 +150,20 @@ If `MONGODB_URI`/`MONGODB_DB` are blank, or a write fails for any reason,
 the lead is just logged and the chat continues normally; a database problem
 never blocks or crashes the bot.
 
+**Diagnosing "nothing shows up in the database":** two things now make this
+self-evident in the logs, right after startup — no need to complete the
+chat flow to find out:
+
+- `check_connection()` runs once via `post_init` when the bot starts, and
+  logs exactly one of: `MongoDB check: connected OK`, `MongoDB check: PING
+  FAILED ...` (with a full traceback — bad URI, network, or auth/IP
+  allowlist), or `MongoDB check: NOT CONFIGURED` (blank env vars).
+- Every `save_lead()` call now logs its outcome: `Lead saved (inserted new
+  document / updated existing document): phone=... broker=...` on success,
+  or a `Failed to save lead ...` traceback on failure. Previously a
+  successful save was silent, so "no broker tapped yet" and "the write is
+  silently failing" looked identical in the log — they no longer do.
+
 ## Getting unstuck / edge cases
 
 - **`/cancel`** at any point during registration → ends it, keeps whatever

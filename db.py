@@ -60,6 +60,38 @@ async def _ensure_indexes() -> None:
         _indexes_ready = True
 
 
+async def check_connection() -> bool:
+    """Ping MongoDB and log a clear, unmissable result. Call this once at
+    bot startup (see bot.py's post_init) so a bad connection string,
+    network issue, or auth/IP-allowlist problem shows up immediately in
+    the log — instead of only surfacing later as a silent "lead not
+    saved" with no obvious cause.
+    """
+    if _collection is None:
+        logger.warning(
+            "MongoDB check: NOT CONFIGURED (MONGODB_URI/MONGODB_DB blank in "
+            ".env) — leads will only be logged, never saved."
+        )
+        return False
+    try:
+        await _collection.database.client.admin.command("ping")
+    except PyMongoError:
+        logger.exception(
+            "MongoDB check: PING FAILED for db=%s collection=%s — leads will "
+            "NOT be saved until this is fixed. Check MONGODB_URI (host, "
+            "username/password, IP allowlist) and MONGODB_DB.",
+            settings.mongodb_db,
+            LEADS_COLLECTION,
+        )
+        return False
+    logger.info(
+        "MongoDB check: connected OK — db=%s collection=%s",
+        settings.mongodb_db,
+        LEADS_COLLECTION,
+    )
+    return True
+
+
 async def save_lead(
     *,
     telegram_id: int,
@@ -93,7 +125,7 @@ async def save_lead(
 
     now = datetime.now(timezone.utc)
     try:
-        await _collection.update_one(
+        result = await _collection.update_one(
             {"phone_normalized": phone_key},
             {
                 "$set": {
@@ -110,3 +142,13 @@ async def save_lead(
         )
     except PyMongoError:
         logger.exception("Failed to save lead (phone=%s) to MongoDB", phone_key)
+        return
+
+    action = "inserted new" if result.upserted_id is not None else "updated existing"
+    logger.info(
+        "Lead saved (%s document): phone=%s broker=%s telegram_id=%s",
+        action,
+        phone_key,
+        broker,
+        telegram_id,
+    )

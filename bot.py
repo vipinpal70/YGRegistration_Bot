@@ -39,7 +39,7 @@ from telegram.ext import (
 )
 
 from config import settings
-from db import save_lead
+from db import check_connection, save_lead
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
@@ -402,6 +402,14 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error("Error while handling an update: %s", err, exc_info=err)
 
 
+async def post_init(app: Application) -> None:
+    # Runs once, right after the bot starts. Pings MongoDB immediately so a
+    # bad MONGODB_URI / network / auth issue is obvious in the log at
+    # startup, instead of only surfacing later as an unexplained "lead not
+    # saved".
+    await check_connection()
+
+
 # --- Entry point --------------------------------------------------------
 def main() -> None:
     if settings.missing_links:
@@ -410,7 +418,7 @@ def main() -> None:
             ", ".join(settings.missing_links),
         )
 
-    app = Application.builder().token(settings.bot_token).build()
+    app = Application.builder().token(settings.bot_token).post_init(post_init).build()
 
     # PTB warns at startup: "If 'per_message=False', 'CallbackQueryHandler'
     # will not be tracked for every message." That's expected here and
