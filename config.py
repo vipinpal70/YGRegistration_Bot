@@ -33,6 +33,8 @@ class Settings:
     elefin_url: str | None
     form_url: str | None
     verification_url: str | None
+    mongodb_uri: str | None
+    mongodb_db: str | None
 
     @property
     def missing_links(self) -> list[str]:
@@ -57,6 +59,8 @@ def load_settings() -> Settings:
         elefin_url=_clean(os.getenv("ELEFIN_URL")),
         form_url=_clean(os.getenv("FORM_URL")),
         verification_url=_resolve_bot_link(os.getenv("VERIFICATION_BOT")),
+        mongodb_uri=_clean(os.getenv("MONGODB_URI")),
+        mongodb_db=_clean(os.getenv("MONGODB_DB")),
     )
 
 

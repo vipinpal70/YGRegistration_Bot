@@ -7,15 +7,20 @@ Telegram onboarding bot for the community.
 ```
 /start  →  greeting: "Hi <name>, Curious to join my 5x community ..."
            (steps 1–3 + limited-time note)
-        →  [New Joinee]              → "Pick your broker 👇"
-        →  [Verify, if under us!]    → opens the verification bot (VERIFICATION_BOT)
+        →  [New Joinee]              → registration (below)
+        →  [Verify, if under us!]    → opens the verification bot directly
+                                        (VERIFICATION_BOT; no data collected)
 
-     "Pick your broker 👇"
-             • Elefin  → its detail screen
-             • XM      → its detail screen
-             • ‹ Back  → greeting
+     registration (New Joinee tapped):
+        "What's your name?"               (‹ Back → greeting, /cancel)
+     →  "What's your phone number?"        [📱 Share phone number] or type it
+     →  "Pick your broker 👇"
+             • ✅ Current Follower  → saves the lead → opens the
+                                       verification bot
+             • Elefin / XM          → saves the lead → broker detail screen
+             • ‹ Back               → greeting
 
-     broker detail screen:
+     broker detail screen (Elefin / XM):
         "To open an account on <broker> using our referral, click on the button.
          Once done, fill out the 5x community form ..."
              • 🔗 Open <broker> link   (referral URL)
@@ -24,9 +29,22 @@ Telegram onboarding bot for the community.
 ```
 
 `GREETING_TEXT` / `BROKER_LIST_TEXT` are plain text (URLs auto-link); the
-greeting is personalised with the user's first name. `BROKER_DETAIL` uses
-HTML for the bold broker name and "5x community". If `VERIFICATION_BOT` is
-unset, the Verify button shows a "not set up yet" alert instead of a link.
+greeting is personalised with the user's first name. `BROKER_DETAIL` /
+`FOLLOWER_DETAIL` use HTML for bold. If `VERIFICATION_BOT` is unset, every
+"open verification" button shows a "not set up yet" alert instead of a link.
+
+Name + phone are collected via a `ConversationHandler` in `bot.py` (states
+`ASK_NAME` → `ASK_PHONE`, held in `context.user_data` for that chat) and are
+re-asked every time "New Joinee" is tapped — nothing is remembered across a
+restart. As soon as a broker (or "Current Follower") is chosen, the lead is
+upserted into MongoDB, **deduplicated by phone number** (a unique index on
+a normalized, digits-only `phone_normalized` field) — see `db.py`. See
+`flow.md` for the full step-by-step walkthrough.
+
+You'll see a `PTBUserWarning` about `per_message=False` on startup — that's
+expected: the registration conversation mixes a button entry point with
+text/contact states, so `per_message=False` (the default) is correct, not a
+bug.
 
 ## Setup
 
@@ -45,6 +63,11 @@ Fill in `.env`:
 | `ELEFIN_URL`       | Elefin referral URL (blank = section + button hidden)  |
 | `FORM_URL`         | 5x community Google Form — how users get added         |
 | `VERIFICATION_BOT` | Verification bot: `https://t.me/...` URL or `@username` |
+| `MONGODB_URI`      | MongoDB connection string for storing leads              |
+| `MONGODB_DB`       | MongoDB database name (collection used is `leads`)       |
+
+If `MONGODB_URI` / `MONGODB_DB` are left blank, leads are just logged
+(`logger.info`) instead of saved — the bot still runs fine.
 
 ## Run
 
