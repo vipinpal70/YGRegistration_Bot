@@ -34,12 +34,14 @@ greeting is personalised with the user's first name. `BROKER_DETAIL` /
 "open verification" button shows a "not set up yet" alert instead of a link.
 
 Name + phone are collected via a `ConversationHandler` in `bot.py` (states
-`ASK_NAME` → `ASK_PHONE`, held in `context.user_data` for that chat) and are
-re-asked every time "New Joinee" is tapped — nothing is remembered across a
-restart. As soon as a broker (or "Current Follower") is chosen, the lead is
-upserted into MongoDB, **deduplicated by phone number** (a unique index on
-a normalized, digits-only `phone_normalized` field) — see `db.py`. See
-`flow.md` for the full step-by-step walkthrough.
+`ASK_NAME` → `ASK_PHONE`). **Returning users skip this**: tapping "New
+Joinee" first looks the user up in MongoDB by Telegram id, and if a lead
+already exists, jumps straight to "Pick your broker" instead of re-asking.
+As soon as a broker (or "Current Follower") is chosen, the lead is upserted
+into MongoDB, **deduplicated by phone number OR Telegram id** — whichever
+matches — via unique indexes on a normalized `phone_normalized` field and
+on `telegram_id` — see `db.py`. See `flow.md` for the full step-by-step
+walkthrough.
 
 You'll see a `PTBUserWarning` about `per_message=False` on startup — that's
 expected: the registration conversation mixes a button entry point with

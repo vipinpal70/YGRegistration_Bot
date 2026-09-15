@@ -32,16 +32,14 @@ Two buttons, built by `choice_keyboard()`:
 | **New Joinee** | `path:new` | Step 2 — starts registration |
 | **Verify, if under us!** | URL → `VERIFICATION_BOT` (or `verify:missing` if that env var is blank) | Opens the verification bot directly. **No name/phone is collected on this path** — it's an instant link out, unchanged from before this feature existed. |
 
-## 2. Tap "New Joinee" — registration starts
+## 2. Tap "New Joinee" — registration starts (or is skipped)
 
 Handler: `start_registration()` (the **entry point** of `registration_conv`, a `ConversationHandler`)
 
-- Clears any `lead_name` / `lead_phone` left over from a previous attempt (`context.user_data`).
-- Edits the greeting message to: **"Great! Let's get you set up.\n\nWhat's your name?"**
-- Shows one button: **‹ Back** (`reg:cancel`) — bails out to step 1.
-- Conversation state becomes `ASK_NAME`.
+First it looks the user up in MongoDB **by Telegram id** (`get_lead_by_telegram_id()` — this is a fresh DB read, not the in-memory `context.user_data`, so it survives bot restarts):
 
-From here the bot is waiting for a **typed reply**, not a button tap.
+- **Returning user** (a lead with a name and phone already exists): skips straight to step 5 — edits the message to `WELCOME_BACK_TEXT` ("Welcome back, {name}! Pick your broker 👇") with the broker-choice buttons, and pre-fills `context.user_data["lead_name"/"lead_phone"]` from the stored record so a broker pick still saves correctly. Conversation ends immediately (`ConversationHandler.END`) — no name/phone questions.
+- **New user** (nothing on file): clears any `lead_name`/`lead_phone` left over from a previous *attempt*, edits the message to **"Great! Let's get you set up.\n\nWhat's your name?"** with one button, **‹ Back** (`reg:cancel`, bails out to step 1), and moves to state `ASK_NAME` — the bot is now waiting for a **typed reply**, not a button tap.
 
 ## 3. User types their name
 
@@ -129,22 +127,32 @@ the `leads` collection of `MONGODB_DB`:
 }
 ```
 
-**Deduplication is by phone number, not by Telegram account.** The number
-is normalized to digits-only (`_normalize_phone()` strips everything but
-digits, so `"+91 98765-43210"` and `"919876543210"` resolve to the same
-key) and that key carries a **unique index** in MongoDB — so even a second
-Telegram account submitting the same number updates the one existing
-document instead of creating a duplicate. This was verified against a real
-MongoDB instance: two different `telegram_id`s with the same phone (in
-different formats) collapsed to one document; a genuinely different phone
-number correctly created a second one; and a direct insert bypassing
-`save_lead()` was rejected by the index itself (`DuplicateKeyError`).
+**Deduplication is by phone number OR Telegram id — whichever matches an
+existing document.** The phone number is normalized to digits-only
+(`_normalize_phone()` strips everything but digits, so `"+91 98765-43210"`
+and `"919876543210"` resolve to the same key), and `save_lead()` upserts
+against `{"$or": [{"telegram_id": ...}, {"phone_normalized": ...}]}` — so
+the same person submitting a different phone next time (matched by
+`telegram_id`) or a different Telegram account submitting the same number
+(matched by `phone_normalized`) both update the one existing document
+rather than creating a new one. Both fields carry a **unique index** in
+MongoDB, so this is a hard guarantee, not just application logic.
 
-The index is created lazily (`_ensure_indexes()`, on the first save of a
-process) rather than at import time, since index creation is an async
-MongoDB call. If the collection already has duplicate phone numbers from
-*before* this dedup logic existed, index creation will fail (logged, not
-fatal) until that old data is cleaned up.
+Verified against a real MongoDB instance: same `telegram_id` + a new phone
+→ 1 doc updated in place; a different `telegram_id` + a previously-seen
+phone → still 1 doc, now attributed to the new account; a genuinely new
+telegram_id + phone → a 2nd doc; a direct insert bypassing `save_lead()` →
+rejected (`DuplicateKeyError`). Also verified the one genuine conflict case
+— two *different* existing documents each matching one half of the `$or`
+(e.g. account A's `telegram_id` and account B's `phone_normalized`) — Mongo
+itself rejects the write (`DuplicateKeyError`, caught and logged) rather
+than silently merging or corrupting either record.
+
+Both indexes are created lazily (`_ensure_indexes()`, on the first save of
+a process) rather than at import time, since index creation is an async
+MongoDB call. If the collection already has duplicate phone numbers or
+telegram_ids from *before* this dedup logic existed, index creation will
+fail (logged, not fatal) until that old data is cleaned up.
 
 If `MONGODB_URI`/`MONGODB_DB` are blank, or a write fails for any reason,
 the lead is just logged and the chat continues normally; a database problem
@@ -179,6 +187,7 @@ chat flow to find out:
   old" error, and `on_error` silences it globally too.
 - **Registration is not remembered** between attempts or restarts — every
   "New Joinee" tap starts the name/phone questions over from scratch.
+- **A registration left half-finished for 30 minutes** (`conversation_timeout=1800`) times out via `on_registration_timeout`: the user gets "That took a while, so your session timed out. Send /start to try again.", and `lead_name`/`lead_phone` are cleared. Before this existed, a timeout ended the conversation silently — no message, so a distracted user had no idea why the bot had "stopped responding". Requires the `[job-queue]` extra of `python-telegram-bot` (in `requirements.txt`) — without it PTB just warns and ignores `conversation_timeout` entirely.
 
 ## Config that drives this flow (`.env`)
 

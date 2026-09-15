@@ -3,8 +3,11 @@
 Flow:
     /start
         -> greeting: the "Hi <name> ..." offer message
-           + button [New Joinee]  -> asks for name, then phone number,
-                                      then "Pick your broker"
+           + button [New Joinee]  -> a RETURNING user (looked up in
+                                      MongoDB by Telegram id) skips
+                                      straight to "Pick your broker";
+                                      anyone else is asked for name, then
+                                      phone number, then "Pick your broker"
                                       [Current Follower] [Elefin] [XM]
            + button [Verify, if under us!]  -> opens the verification bot
                                                 directly (no data collected)
@@ -39,7 +42,7 @@ from telegram.ext import (
 )
 
 from config import settings
-from db import check_connection, save_lead
+from db import check_connection, get_lead_by_telegram_id, save_lead
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
@@ -78,6 +81,7 @@ GREETING_TEXT = (
 )
 
 BROKER_LIST_TEXT = "Pick your broker 👇"
+WELCOME_BACK_TEXT = "Welcome back, {name}! Pick your broker 👇"
 
 BROKER_DETAIL = (
     "To open an account on <b>{broker}</b> using our referral, click on the "
@@ -240,8 +244,28 @@ async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if query is None:
         return ConversationHandler.END
     await _ack(query)
-    logger.info("User %s (%s) started registration", query.from_user.id, query.from_user.username)
 
+    # Returning user: we already have their name + phone from a previous
+    # visit (looked up by Telegram id, not context.user_data — that's
+    # per-process and gone after a restart). Skip straight to the part
+    # they haven't done yet instead of asking again.
+    lead = await get_lead_by_telegram_id(query.from_user.id)
+    if lead and lead.get("name") and lead.get("phone"):
+        logger.info(
+            "User %s (%s) recognised as a returning lead — skipping name/phone",
+            query.from_user.id,
+            query.from_user.username,
+        )
+        _ud(context)["lead_name"] = lead["name"]
+        _ud(context)["lead_phone"] = lead["phone"]
+        await _safe_edit(
+            query,
+            WELCOME_BACK_TEXT.format(name=lead["name"]),
+            broker_list_keyboard(),
+        )
+        return ConversationHandler.END
+
+    logger.info("User %s (%s) started registration", query.from_user.id, query.from_user.username)
     _ud(context).pop("lead_name", None)
     _ud(context).pop("lead_phone", None)
     await _safe_edit(
@@ -322,6 +346,23 @@ async def restart_from_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if update.message is not None:
         await update.message.reply_text("Starting over.", reply_markup=ReplyKeyboardRemove())
         await start(update, context)
+    return ConversationHandler.END
+
+
+async def on_registration_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Fires after conversation_timeout (30 min) of inactivity mid-registration.
+    Without this, a slow/distracted user would be silently dropped — the
+    conversation ends with no message, and if they later send their phone
+    number it just falls through unhandled instead of being saved."""
+    _ud(context).pop("lead_name", None)
+    _ud(context).pop("lead_phone", None)
+    if update.effective_chat is not None:
+        await context.bot.send_message(
+            update.effective_chat.id,
+            "That took a while, so your session timed out. Send /start to "
+            "try again.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
     return ConversationHandler.END
 
 
@@ -432,6 +473,10 @@ def main() -> None:
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_name)],
             ASK_PHONE: [
                 MessageHandler(filters.CONTACT | (filters.TEXT & ~filters.COMMAND), receive_phone)
+            ],
+            ConversationHandler.TIMEOUT: [
+                MessageHandler(filters.ALL, on_registration_timeout),
+                CallbackQueryHandler(on_registration_timeout),
             ],
         },
         fallbacks=[
