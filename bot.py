@@ -80,8 +80,8 @@ GREETING_TEXT = (
     "⚠️ Offer is valid only for a limited time. 🕘"
 )
 
-BROKER_LIST_TEXT = "Pick your broker 👇"
-WELCOME_BACK_TEXT = "Welcome back, {name}! Pick your broker 👇"
+BROKER_LIST_TEXT = "One last step — tap a button below to finish 👇"
+WELCOME_BACK_TEXT = "Welcome back, {name}! Tap a button below to finish 👇"
 
 BROKER_DETAIL = (
     "To open an account on <b>{broker}</b> using our referral, click on the "

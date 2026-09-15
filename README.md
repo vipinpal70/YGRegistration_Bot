@@ -14,7 +14,7 @@ Telegram onboarding bot for the community.
      registration (New Joinee tapped):
         "What's your name?"               (‹ Back → greeting, /cancel)
      →  "What's your phone number?"        [📱 Share phone number] or type it
-     →  "Pick your broker 👇"
+     →  "One last step — tap a button below to finish 👇"
              • ✅ Current Follower  → saves the lead → opens the
                                        verification bot
              • Elefin / XM          → saves the lead → broker detail screen
@@ -36,7 +36,7 @@ greeting is personalised with the user's first name. `BROKER_DETAIL` /
 Name + phone are collected via a `ConversationHandler` in `bot.py` (states
 `ASK_NAME` → `ASK_PHONE`). **Returning users skip this**: tapping "New
 Joinee" first looks the user up in MongoDB by Telegram id, and if a lead
-already exists, jumps straight to "Pick your broker" instead of re-asking.
+already exists, jumps straight to "one last step" prompt instead of re-asking.
 As soon as a broker (or "Current Follower") is chosen, the lead is upserted
 into MongoDB, **deduplicated by phone number OR Telegram id** — whichever
 matches — via unique indexes on a normalized `phone_normalized` field and

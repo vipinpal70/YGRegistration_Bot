@@ -38,7 +38,7 @@ Handler: `start_registration()` (the **entry point** of `registration_conv`, a `
 
 First it looks the user up in MongoDB **by Telegram id** (`get_lead_by_telegram_id()` — this is a fresh DB read, not the in-memory `context.user_data`, so it survives bot restarts):
 
-- **Returning user** (a lead with a name and phone already exists): skips straight to step 5 — edits the message to `WELCOME_BACK_TEXT` ("Welcome back, {name}! Pick your broker 👇") with the broker-choice buttons, and pre-fills `context.user_data["lead_name"/"lead_phone"]` from the stored record so a broker pick still saves correctly. Conversation ends immediately (`ConversationHandler.END`) — no name/phone questions.
+- **Returning user** (a lead with a name and phone already exists): skips straight to step 5 — edits the message to `WELCOME_BACK_TEXT` ("Welcome back, {name}! Tap a button below to finish 👇") with the broker-choice buttons, and pre-fills `context.user_data["lead_name"/"lead_phone"]` from the stored record so a broker pick still saves correctly. Conversation ends immediately (`ConversationHandler.END`) — no name/phone questions.
 - **New user** (nothing on file): clears any `lead_name`/`lead_phone` left over from a previous *attempt*, edits the message to **"Great! Let's get you set up.\n\nWhat's your name?"** with one button, **‹ Back** (`reg:cancel`, bails out to step 1), and moves to state `ASK_NAME` — the bot is now waiting for a **typed reply**, not a button tap.
 
 ## 3. User types their name
@@ -68,12 +68,12 @@ re-prompts and stays in `ASK_PHONE`.
 On success:
 - Stores it in `context.user_data["lead_phone"]`.
 - Sends "Got it, thanks!" and removes the reply keyboard (`ReplyKeyboardRemove`).
-- Sends `BROKER_LIST_TEXT` ("Pick your broker 👇") with the broker-choice buttons (step 5).
+- Sends `BROKER_LIST_TEXT` ("One last step — tap a button below to finish 👇") with the broker-choice buttons (step 5).
 - Conversation **ends** (`ConversationHandler.END`) — from here on the bot is back to normal button-driven handling, no longer "mid-conversation".
 
 At this point the bot has **name + phone** for this user, held in `context.user_data` for the rest of the chat session (not written to the database yet).
 
-## 5. "Pick your broker 👇"
+## 5. "One last step — tap a button below to finish 👇"
 
 Keyboard: `broker_list_keyboard()`. Three choices, all routed through the single handler **`on_broker()`**:
 
